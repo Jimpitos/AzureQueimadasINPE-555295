@@ -1,11 +1,18 @@
-name: Destroy - Infra Dia 1
-
+name: Destroy Infra (Dia 1 + Dia 2)
 on:
   workflow_dispatch:
     inputs:
       confirm:
         description: 'Digite "destroy" para confirmar a destruicao dos recursos'
         required: true
+      target:
+        description: 'Escopo do destroy: all (tudo) ou aci-only (so a webapp)'
+        required: true
+        default: 'aci-only'
+        type: choice
+        options:
+          - all
+          - aci-only
 
 env:
   TF_VAR_mysql_admin_password: ${{ secrets.MYSQL_ADMIN_PASSWORD }}
@@ -14,17 +21,26 @@ jobs:
   terraform-destroy:
     if: github.event.inputs.confirm == 'destroy'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: infra
+    environment: producao-destroy
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+      
       - name: Azure Login
-        run: |
-          az login --service-principal \
-            -u ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }} \
-            -p ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }} \
-            --tenant ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
-      - run: terraform init
-      - run: terraform destroy -auto-approve
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          
+      - name: Init
+        working-directory: infra
+        run: terraform init
+        
+      - name: Destroy apenas o ACI
+        if: github.event.inputs.target == 'aci-only'
+        working-directory: infra
+        run: terraform destroy -target=azurerm_container_group.webapp -auto-approve
+        
+      - name: Destroy de toda a infraestrutura
+        if: github.event.inputs.target == 'all'
+        working-directory: infra
+        run: terraform destroy -auto-approve

@@ -26,3 +26,14 @@ variable "function_app_name" {
 variable "storage_account_name" {
   default = "stqueimadasfunc555295"
 }
+variable "acr_name" {
+  default = "acrqueimadas"
+}
+
+
+variable "aci_name" {
+  default = "aci-webapp-queimadas"
+}
+variable "webapp_image_tag" {
+  default = "latest"
+}

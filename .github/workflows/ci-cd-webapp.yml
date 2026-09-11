@@ -1,0 +1,56 @@
+name: CI/CD WebApp (Dia 2)
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'webapp/**'
+      - 'infra/acr.tf'
+      - 'infra/aci.tf'
+
+env:
+  TF_VAR_mysql_admin_password: ${{ secrets.MYSQL_ADMIN_PASSWORD }}
+
+jobs:
+  ensure-acr-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Terraform Apply (garante que o ACR existe)
+        working-directory: infra
+        run: |
+          terraform init
+          terraform apply -auto-approve -target=azurerm_container_registry.acr
+
+      - name: ACR Login
+        run: az acr login --name acrqueimadas
+
+      - name: Build e Push da imagem
+        working-directory: webapp
+        run: |
+          docker build -t acrqueimadas.azurecr.io/webapp-queimadas:${{ github.sha }} .
+          docker build -t acrqueimadas.azurecr.io/webapp-queimadas:latest .
+          docker push acrqueimadas.azurecr.io/webapp-queimadas:${{ github.sha }}
+          docker push acrqueimadas.azurecr.io/webapp-queimadas:latest
+
+      - name: Terraform Apply (cria/atualiza o ACI)
+        working-directory: infra
+        run: terraform apply -auto-approve
+
+      - name: Verificar aplicacao publicada
+        run: |
+          FQDN=$(az container show --name aci-webapp-queimadas --resource-group rg-monitor-queimadas-555295 --query ipAddress.fqdn -o tsv)
+          echo "Aguardando aplicacao responder em http://$FQDN:8080 ..."
+          for i in $(seq 1 10); do
+            if curl -sf "http://$FQDN:8080/health"; then
+              echo "Aplicacao respondendo com sucesso."
+              break
+            fi
+            sleep 10
+          done
